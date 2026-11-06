@@ -1,10 +1,9 @@
 from dotenv import load_dotenv
 import os
+from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-
-
+from typing import Literal
 load_dotenv()
 
 model_name = os.getenv("MODEL")
@@ -15,12 +14,27 @@ model = ChatGoogleGenerativeAI(
     api_key=api
 )
 
+class ReportModel(BaseModel):
+    """Alert report structure """
+    time: str = Field(description="Time in which the error occured")
+    service: str = Field(description="The service/services affected by the error")
+    cause: str = Field(description="The likely root cause of the error")
+    evidence: str = Field(description="Evidence from the logs")
+    next_step: str = Field(description="Recommended next steps")
+    incident: bool = Field(description="The incident had already occured")
+    alert: bool = Field(description="The incident hadn't yet occured, but expected due to the errors observed")
+    fact: Literal["confirmed", "likely", "uncertain"] = Field(description="how sure are we about the root cause, the incident happening, and the services getting affected by the error")
+
+    
+
+structured_model = model.with_structured_output(ReportModel)
 prompt = ChatPromptTemplate.from_messages([
     ("system", "you are an expert Infrastructure Engineer with expertise in incident investigation"),
     ("human", "Based on the following logs:{logs}, what incident had happened or is expected to happen ")
 ])
 
-chain = prompt | model | StrOutputParser()
+chain = prompt | structured_model
+
 
 result = chain.invoke({
     "logs": """
@@ -32,4 +46,5 @@ result = chain.invoke({
             """
 })
 
-print(result)
+json_string = result.model_dump_json(indent=2)
+print(json_string)
